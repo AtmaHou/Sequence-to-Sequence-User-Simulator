@@ -137,7 +137,7 @@ class UserSim:
                 dialogue_history.append(context_vector)
                 self.x_all.append(dialogue_history[-1 * context_turn_num:])
                 goal_state['c_value'] = constraint_values
-                goal_state['r_value'] = request_values
+                goal_state['r_value'] = request_vector
                 self.goal_state_all.append(goal_state)
 
     def train(self, x_train, y_train, save_pm=True):
@@ -283,7 +283,7 @@ class UserSim:
                         if r_value:
                             request_ans[self.requestable.index(r_value)] = 1
                 actual.extend(request_ans)
-                # print "==== debug ====", goal_state['r_value'], len(predicted), len(actual)
+                print "==== debug ====", len(predicted), len(actual)
                 # =========== start test ==============
                 for pos in range(len(predicted)):
                     if predicted[pos] == 1:
