@@ -172,155 +172,76 @@ class UserSim:
 
         if testing:
             model_predictions = self.test(x_test, y_test)
-            self.type_level_evaluate(model_predictions, y_test)
-            self.fine_grained_evaluate(model_predictions, y_test, goal_state_test)
+            self.evaluate(model_predictions, y_test, goal_state_test, 'type_level_eval_log.txt', fine_grain=False)
+            self.evaluate(model_predictions, y_test, goal_state_test, 'fine_grained_eval_log.txt')
 
-    def type_level_evaluate(self, model_predictions, y_test):
-        # useless in-fact.....
-        correct = 0
-        predictions = []
-        precision = 0.0
-        recall = 0.0
-        with open('type_level_eval_log.txt', 'w') as writer:
-            for j in range(0, len(model_predictions)):
-                predicted = (1 / (1 + np.exp(-np.array(model_predictions[j])))).tolist()
-                actual = y_test[j].tolist()
-                local_precision = 0.0
-                local_recall = 0.0
+    def action_mapper(self, type_predicted, type_actual, goal_state):
+        predicted = type_predicted[: -2]
+        actual = type_actual[: -2]
+        # deal with inform
+        if type_predicted[-2]:  # inform act selected
+            predicted.extend(goal_state['c_vector'])
+        else:
+            predicted.extend([0] * len(self.informable))
+        inform_ans = [0] * len(self.informable)
+        if type_actual[-2]:
+            for ind, c_value in enumerate(goal_state['c_value']):
+                if c_value != '':
+                    inform_ans[ind] = 1
+        actual.extend(inform_ans)
+        # deal with req
+        if type_predicted[-1]:  # from act selected
+            predicted.extend(goal_state['r_vector'])
+        else:
+            predicted.extend([0] * len(self.requestable))
+        request_ans = [0] * len(self.requestable)
+        if type_actual[-1]:
+            for r_value in goal_state['r_value']:
+                if r_value:
+                    request_ans[self.requestable.index(r_value)] = 1
+        actual.extend(request_ans)
+        return predicted, actual
 
-                for i in range(0, len(predicted)):
-                    if predicted[i] >= 0.58:
-                        predicted[i] = 1
-                    else:
-                        predicted[i] = 0
-
-                if predicted == actual:
-                    correct += 1
-
-                for pos in range(len(predicted)):
-                    if predicted[pos] == 1:
-                        if actual[pos] == 1:
-                            local_precision += 1
-
-                for pos in range(len(actual)):
-                    if actual[pos] == 1:
-                        if predicted[pos] == 1:
-                            local_recall += 1
-                precision_count = predicted.count(1)
-                local_precision_avg = 0.0
-                if precision_count != 0:
-                    local_precision_avg += local_precision / precision_count
-
-                recall_count = actual.count(1)
-                local_recall_avg = 0.0
-                if recall_count != 0:
-                    local_recall_avg = local_recall / recall_count
-
-                precision += local_precision_avg
-                recall += local_recall_avg
-
-                predictions.append(predicted)
-
-                eval_str = '\n[%d]\npredicted: %s\nactual: %s\nLocal Precision: %f\nLocal Recall: %f\n' % (
-                    j,
-                    str(predicted),
-                    str(actual),
-                    local_precision_avg,
-                    local_recall_avg,
-                )
-                writer.write(eval_str)
-
-        print 'Accuracy: %f' % (correct * 1.0 / len(model_predictions))
-        print 'Precision: %f' % (precision / len(model_predictions))
-        print 'Recall: %f' % (recall / len(model_predictions))
-
-    def fine_grained_evaluate(self, model_predictions, y_test, goal_state_test):
-        print 'start fine grained test'
-        correct = 0
-        predictions = []
-        precision = 0.0
-        recall = 0.0
-        with open('fine_grained_eval_log.txt', 'w') as writer:
+    def evaluate(self, model_predictions, y_test, goal_state_test, log_file, fine_grain=True):
+        print ' ========== start test =========== '
+        actual_acts = 0
+        correct_acts = 0
+        predict_acts = 0
+        totally_correct = 0
+        with open(log_file, 'w') as writer:
             for j in range(0, len(model_predictions)):
                 type_predicted = (1 / (1 + np.exp(-np.array(model_predictions[j])))).tolist()
                 type_actual = y_test[j].tolist()
                 goal_state = goal_state_test[j]
 
-                local_precision = 0.0
-                local_recall = 0.0
+                for ind, type_score in enumerate(type_predicted):
+                    type_predicted[ind] = (type_score > 0.58)
 
-                for i in range(0, len(type_predicted)):
-                    if type_predicted[i] >= 0.58:
-                        type_predicted[i] = 1
-                    else:
-                        type_predicted[i] = 0
-
-                if type_predicted == type_actual:
-                    correct += 1
-
-                # ========== transfer to fine-grained level ===========
-                predicted = type_predicted[: -2]
-                actual = type_actual[: -2]
-                # deal with inform
-                if type_predicted[-2]:  # inform act selected
-                    predicted.extend(goal_state['c_vector'])
+                if fine_grain:
+                    # ========== transfer to fine-grained level ===========
+                    predicted, actual = self.action_mapper(type_predicted, type_actual, goal_state)
                 else:
-                    predicted.extend([0] * len(self.informable))
-                inform_ans = [0] * len(self.informable)
-                if type_actual[-2]:
-                    for ind, c_value in enumerate(goal_state['c_value']):
-                        if c_value != '':
-                            inform_ans[ind] = 1
-                actual.extend(inform_ans)
-                # deal with req
-                if type_predicted[-1]:  # from act selected
-                    predicted.extend(goal_state['r_vector'])
-                else:
-                    predicted.extend([0] * len(self.requestable))
-                request_ans = [0] * len(self.requestable)
-                if type_actual[-1]:
-                    for r_value in goal_state['r_value']:
-                        if r_value:
-                            request_ans[self.requestable.index(r_value)] = 1
-                actual.extend(request_ans)
-                # print "==== debug ====", goal_state['r_value'], len(predicted), len(actual)
+                    predicted, actual = type_predicted, type_actual
+
                 # =========== start test ==============
-                for pos in range(len(predicted)):
-                    if predicted[pos] == 1:
-                        if actual[pos] == 1:
-                            local_precision += 1
+                if predicted == actual:
+                    totally_correct += 1
 
-                for pos in range(len(actual)):
-                    if actual[pos] == 1:
-                        if predicted[pos] == 1:
-                            local_recall += 1
-                precision_count = predicted.count(1)
-                local_precision_avg = 0.0
-                if precision_count != 0:
-                    local_precision_avg += local_precision / precision_count
-
-                recall_count = actual.count(1)
-                local_recall_avg = 0.0
-                if recall_count != 0:
-                    local_recall_avg = local_recall / recall_count
-
-                precision += local_precision_avg
-                recall += local_recall_avg
-
-                predictions.append(predicted)
-
-                eval_str = '\n[%d]\npredicted: %s\nactual: %s\nLocal Precision: %f\nLocal Recall: %f\n' % (
+                correct_acts += zip(predicted, actual).count((1, 1))
+                predict_acts += predicted.count(1)
+                actual_acts += actual.count(1)
+                eval_str = '\n[%d]\npredicted: %s\nactual: %s\n' % (
                     j,
                     str(predicted),
-                    str(actual),
-                    local_precision_avg,
-                    local_recall_avg,
+                    str(actual)
                 )
                 writer.write(eval_str)
-
-        print 'Accuracy: %f' % (correct * 1.0 / len(model_predictions))
-        print 'Precision: %f' % (precision / len(model_predictions))
-        print 'Recall: %f' % (recall / len(model_predictions))
+        precision = correct_acts * 1.0 / predict_acts
+        recall = correct_acts * 1.0 / actual_acts
+        print 'Accuracy: %f' % (totally_correct * 1.0 / len(model_predictions))
+        print 'Precision: %f' % (precision)
+        print 'Recall: %f' % (recall)
+        print 'F1: %f' % (2 * (precision * recall) / (precision + recall))
 
 if __name__ == '__main__':
     dataset = dataset_walker("dstc2_dev", dataroot=data_folder, labels=True)
